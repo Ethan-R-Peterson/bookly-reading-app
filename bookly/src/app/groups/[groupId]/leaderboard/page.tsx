@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
@@ -9,8 +10,15 @@ import { useLeaderboard } from "@/hooks/useLeaderboard";
 import { useQuery } from "@tanstack/react-query";
 import type { Group } from "@/types";
 
+const PERIODS = [
+  { value: "weekly", label: "This Week" },
+  { value: "monthly", label: "This Month" },
+  { value: "all", label: "All Time" },
+];
+
 export default function LeaderboardPage() {
   const { groupId } = useParams<{ groupId: string }>();
+  const [period, setPeriod] = useState("all");
 
   const { data: groups } = useQuery<Group[]>({
     queryKey: ["groups"],
@@ -22,9 +30,8 @@ export default function LeaderboardPage() {
   });
 
   const group = groups?.find((g) => g.id === groupId);
-  const { data: leaderboard, isLoading } = useLeaderboard(groupId);
+  const { data: leaderboard, isLoading } = useLeaderboard(groupId, period);
 
-  // Find the current user's rank
   const topUser = leaderboard?.[0];
 
   return (
@@ -39,10 +46,27 @@ export default function LeaderboardPage() {
             >
               &larr; Back to {group?.name ?? "group"}
             </Link>
-            <h1 className="text-2xl font-bold text-gray-900 mt-1">
+            <h1 className="text-2xl font-bold text-gray-900 tracking-tight mt-1">
               Leaderboard
             </h1>
           </div>
+        </div>
+
+        {/* Period toggle */}
+        <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-6">
+          {PERIODS.map((p) => (
+            <button
+              key={p.value}
+              onClick={() => setPeriod(p.value)}
+              className={`flex-1 py-1.5 text-sm font-medium rounded-md transition-colors ${
+                period === p.value
+                  ? "bg-white text-indigo-600 shadow-sm"
+                  : "text-gray-500 hover:text-gray-700"
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
         </div>
 
         {/* Top player highlight */}
@@ -57,6 +81,11 @@ export default function LeaderboardPage() {
                 <p className="text-xl font-bold">{topUser.username}</p>
                 <p className="text-indigo-100">
                   {topUser.total_points} points
+                  {topUser.rank_title && (
+                    <span className="ml-2 text-xs bg-white/20 px-2 py-0.5 rounded-full">
+                      {topUser.rank_title}
+                    </span>
+                  )}
                 </p>
               </div>
             </div>
@@ -64,7 +93,7 @@ export default function LeaderboardPage() {
         )}
 
         {/* Full leaderboard */}
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <div className="bg-white rounded-xl shadow-sm p-5">
           {isLoading ? (
             <Spinner className="py-8" />
           ) : leaderboard && leaderboard.length > 0 ? (

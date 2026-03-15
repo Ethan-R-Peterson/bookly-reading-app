@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Navbar from "@/components/Navbar";
 import Spinner from "@/components/Spinner";
+import ReviewForm from "@/components/ReviewForm";
 import { useUserBooks } from "@/hooks/useBooks";
 import { useLogPages } from "@/hooks/useReadingLogs";
 
@@ -14,6 +15,8 @@ export default function LogPage() {
   const [pages, setPages] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
+  const [reviewBookId, setReviewBookId] = useState<string | null>(null);
+  const [reviewBookTitle, setReviewBookTitle] = useState("");
 
   const readingBooks = userBooks?.filter((ub) => ub.status === "reading") ?? [];
 
@@ -44,6 +47,11 @@ export default function LogPage() {
       }
       if (result.isFinished) {
         msg += ` Book finished! +${result.finishBonus} pts!`;
+        const book = readingBooks.find((ub) => ub.id === selectedBookId);
+        if (book?.book) {
+          setReviewBookId(book.book.google_books_id);
+          setReviewBookTitle(book.book.title);
+        }
       }
       if (result.streakDays > 0) {
         msg += ` (${result.streakDays}-day streak)`;
@@ -62,12 +70,13 @@ export default function LogPage() {
     <>
       <Navbar />
       <main className="max-w-xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Log Pages</h1>
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight mb-6">Log Pages</h1>
 
         {isLoading ? (
           <Spinner className="py-12" />
         ) : readingBooks.length === 0 ? (
-          <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-8 text-center">
+          <div className="bg-gray-50/50 rounded-xl border border-dashed border-gray-200 p-10 text-center">
+            <p className="text-4xl mb-3">{"\u{1F4D6}"}</p>
             <p className="text-gray-500">
               No books in progress. Start reading a book first!
             </p>
@@ -75,7 +84,7 @@ export default function LogPage() {
         ) : (
           <form
             onSubmit={handleSubmit}
-            className="bg-white rounded-xl border border-gray-200 p-6 space-y-4"
+            className="bg-white rounded-xl shadow-sm p-6 space-y-4"
           >
             {/* Book Select */}
             <div>
@@ -116,7 +125,7 @@ export default function LogPage() {
                 </div>
                 <div className="w-full bg-gray-100 rounded-full h-2">
                   <div
-                    className="bg-indigo-500 h-2 rounded-full transition-all"
+                    className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all"
                     style={{
                       width: `${Math.min(100, (selectedBook.current_page / selectedBook.book.page_count) * 100)}%`,
                     }}
@@ -161,13 +170,21 @@ export default function LogPage() {
             <button
               type="submit"
               disabled={logPages.isPending}
-              className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-medium hover:bg-indigo-700 transition-colors disabled:opacity-50"
+              className="w-full py-2.5 bg-indigo-600 text-white rounded-lg font-medium shadow-sm hover:bg-indigo-700 hover:shadow-md transition-all duration-200 disabled:opacity-50"
             >
               {logPages.isPending ? "Logging..." : "Log Pages"}
             </button>
           </form>
         )}
       </main>
+
+      {reviewBookId && (
+        <ReviewForm
+          bookId={reviewBookId}
+          bookTitle={reviewBookTitle}
+          onClose={() => setReviewBookId(null)}
+        />
+      )}
     </>
   );
 }

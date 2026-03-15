@@ -20,7 +20,7 @@ export default function BooksPage() {
     <>
       <Navbar />
       <main className="max-w-5xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-6">Search Books</h1>
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight mb-6">Search Books</h1>
 
         <form onSubmit={handleSearch} className="flex gap-2 mb-6">
           <input
@@ -32,7 +32,7 @@ export default function BooksPage() {
           />
           <button
             type="submit"
-            className="px-6 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            className="px-6 py-2 bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 hover:shadow-md transition-all duration-200"
           >
             Search
           </button>
@@ -49,7 +49,8 @@ export default function BooksPage() {
         )}
 
         {results && results.length === 0 && searchTerm && (
-          <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-8 text-center">
+          <div className="bg-gray-50/50 rounded-xl border border-dashed border-gray-200 p-10 text-center">
+            <p className="text-4xl mb-3">{"\u{1F50D}"}</p>
             <p className="text-gray-500">
               No books found for &quot;{searchTerm}&quot;
             </p>

@@ -21,7 +21,7 @@ export async function GET(request: Request) {
     const volumes = await searchGoogleBooks(query);
 
     const results = volumes
-      .filter((v) => v.volumeInfo.title)
+      .filter((v) => v.volumeInfo.title && v.volumeInfo.pageCount)
       .map((v) => ({
         google_books_id: v.id,
         title: v.volumeInfo.title,

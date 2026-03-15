@@ -48,7 +48,7 @@ export default function GroupsPage() {
       <Navbar />
       <main className="max-w-5xl mx-auto px-4 py-8">
         <div className="flex items-center justify-between mb-6">
-          <h1 className="text-2xl font-bold text-gray-900">My Groups</h1>
+          <h1 className="text-2xl font-bold text-gray-900 tracking-tight">My Groups</h1>
           <div className="flex gap-2">
             <button
               onClick={() => {
@@ -56,7 +56,7 @@ export default function GroupsPage() {
                 setShowCreate(false);
                 setError(null);
               }}
-              className="px-4 py-2 text-sm border border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors"
+              className="px-4 py-2 text-sm border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all duration-200"
             >
               Join Group
             </button>
@@ -66,7 +66,7 @@ export default function GroupsPage() {
                 setShowJoin(false);
                 setError(null);
               }}
-              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 hover:shadow-md transition-all duration-200"
             >
               Create Group
             </button>
@@ -83,9 +83,9 @@ export default function GroupsPage() {
         {showCreate && (
           <form
             onSubmit={handleCreate}
-            className="mb-6 bg-white rounded-xl border border-gray-200 p-5 space-y-3"
+            className="mb-6 bg-white rounded-xl shadow-sm p-5 space-y-3"
           >
-            <h2 className="font-semibold text-gray-900">Create a New Group</h2>
+            <h2 className="font-semibold text-gray-900 tracking-tight">Create a New Group</h2>
             <input
               type="text"
               value={name}
@@ -104,7 +104,7 @@ export default function GroupsPage() {
             <button
               type="submit"
               disabled={createGroup.isPending}
-              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 hover:shadow-md disabled:opacity-50 transition-all duration-200"
             >
               {createGroup.isPending ? "Creating..." : "Create"}
             </button>
@@ -115,9 +115,9 @@ export default function GroupsPage() {
         {showJoin && (
           <form
             onSubmit={handleJoin}
-            className="mb-6 bg-white rounded-xl border border-gray-200 p-5 space-y-3"
+            className="mb-6 bg-white rounded-xl shadow-sm p-5 space-y-3"
           >
-            <h2 className="font-semibold text-gray-900">Join a Group</h2>
+            <h2 className="font-semibold text-gray-900 tracking-tight">Join a Group</h2>
             <input
               type="text"
               value={inviteCode}
@@ -130,7 +130,7 @@ export default function GroupsPage() {
             <button
               type="submit"
               disabled={joinGroup.isPending}
-              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50"
+              className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 hover:shadow-md disabled:opacity-50 transition-all duration-200"
             >
               {joinGroup.isPending ? "Joining..." : "Join"}
             </button>
@@ -147,7 +147,8 @@ export default function GroupsPage() {
             ))}
           </div>
         ) : (
-          <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-8 text-center">
+          <div className="bg-gray-50/50 rounded-xl border border-dashed border-gray-200 p-10 text-center">
+            <p className="text-4xl mb-3">{"\u{1F465}"}</p>
             <p className="text-gray-500">
               No groups yet. Create one or join with an invite code!
             </p>

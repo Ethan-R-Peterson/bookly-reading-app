@@ -1,12 +1,15 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { getRankInfo } from "@/lib/gamification";
 
-// GET /api/groups/[groupId]/leaderboard
+// GET /api/groups/[groupId]/leaderboard?period=weekly|monthly|all
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ groupId: string }> }
 ) {
   const { groupId } = await params;
+  const { searchParams } = new URL(request.url);
+  const period = searchParams.get("period") ?? "all";
   const supabase = await createClient();
   const {
     data: { user },
@@ -24,11 +27,23 @@ export async function GET(
   const memberIds = members?.map((m) => m.user_id) ?? [];
   if (memberIds.length === 0) return NextResponse.json([]);
 
-  // Get points for all members
-  const { data: points, error: pointsError } = await supabase
+  // Get points for all members (with optional time filter)
+  let pointsQuery = supabase
     .from("points")
     .select("user_id, amount")
     .in("user_id", memberIds);
+
+  if (period === "weekly") {
+    const weekAgo = new Date();
+    weekAgo.setDate(weekAgo.getDate() - 7);
+    pointsQuery = pointsQuery.gte("created_at", weekAgo.toISOString());
+  } else if (period === "monthly") {
+    const monthAgo = new Date();
+    monthAgo.setMonth(monthAgo.getMonth() - 1);
+    pointsQuery = pointsQuery.gte("created_at", monthAgo.toISOString());
+  }
+
+  const { data: points, error: pointsError } = await pointsQuery;
 
   if (pointsError) return NextResponse.json({ error: pointsError.message }, { status: 500 });
 
@@ -44,12 +59,27 @@ export async function GET(
     pointsByUser[p.user_id] = (pointsByUser[p.user_id] ?? 0) + p.amount;
   }
 
+  // Also get all-time points for rank calculation
+  let allTimePoints = pointsByUser;
+  if (period !== "all") {
+    const { data: allPts } = await supabase
+      .from("points")
+      .select("user_id, amount")
+      .in("user_id", memberIds);
+    const allPointsByUser: Record<string, number> = {};
+    for (const p of allPts ?? []) {
+      allPointsByUser[p.user_id] = (allPointsByUser[p.user_id] ?? 0) + p.amount;
+    }
+    allTimePoints = allPointsByUser;
+  }
+
   const leaderboard = (users ?? [])
     .map((u) => ({
       id: u.id,
       username: u.username,
       avatar_url: u.avatar_url,
       total_points: pointsByUser[u.id] ?? 0,
+      rank_title: getRankInfo(allTimePoints[u.id] ?? 0).title,
     }))
     .sort((a, b) => b.total_points - a.total_points);
 

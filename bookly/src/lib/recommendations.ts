@@ -1,64 +1,140 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Book } from "@/types";
-import { searchGoogleBooks } from "@/lib/google-books";
+import {
+  searchGoogleBooks,
+  getRelatedVolumes,
+  type GoogleBookVolume,
+} from "@/lib/google-books";
 
 interface ScoredBook extends Book {
   score: number;
 }
 
 /**
+ * Normalize a title for fuzzy comparison.
+ * Strips subtitles, edition markers, parentheticals, punctuation, and lowercases.
+ */
+function normalizeTitle(title: string): string {
+  return title
+    .toLowerCase()
+    .replace(/\(.*?\)/g, "")           // remove parentheticals
+    .replace(/[:–—-].*/g, "")          // remove subtitles after : or dashes
+    .replace(/\b(edition|ed|vol|volume|book)\b.*$/i, "") // remove edition/vol markers
+    .replace(/[^a-z0-9\s]/g, "")       // remove punctuation
+    .replace(/\s+/g, " ")              // collapse whitespace
+    .trim();
+}
+
+/**
+ * Check if two titles are fuzzy-similar (same book, different edition/format).
+ */
+function isSimilarTitle(a: string, b: string): boolean {
+  const na = normalizeTitle(a);
+  const nb = normalizeTitle(b);
+  if (na === nb) return true;
+  if (na.length > 3 && nb.length > 3) {
+    if (na.includes(nb) || nb.includes(na)) return true;
+  }
+  return false;
+}
+
+/**
+ * Compute a recency weight for a book based on when the user started it.
+ * Books started in the last 7 days get weight 1.0, decaying to 0.2 for
+ * books started 90+ days ago. This makes recent reading tastes matter more.
+ */
+function recencyWeight(startedAt: string): number {
+  const daysAgo =
+    (Date.now() - new Date(startedAt).getTime()) / (1000 * 60 * 60 * 24);
+  if (daysAgo <= 7) return 1.0;
+  if (daysAgo <= 30) return 0.7;
+  if (daysAgo <= 90) return 0.4;
+  return 0.2;
+}
+
+/**
  * Recommendation scoring weights:
  *
- * genre_match       (3x) - book's genre matches a genre the user has read
- * author_match      (4x) - book's author matches an author the user or their group has read
- * similar_length    (1x) - page count within 20% of user's average
- * group_popularity  (3x) - normalized count of group members reading this book
- * global_popularity (1x) - normalized count of all users reading this book
- * rating            (2x) - Google Books average rating normalized to 0-1 (rating / 5)
- * ratings_count     (1x) - log-scaled review count normalized 0-1
- *
- * Max theoretical score: 3 + 4 + 1 + 3 + 1 + 2 + 1 = 15
+ * genre_match       (5x) - weighted by recency of when user read that genre
+ * author_match      (2x) - same author, weighted by recency
+ * related_volume    (3x) - Google Books says this is related to a user's book
+ * rating            (2x) - Google Books average rating / 5
+ * group_popularity  (2x) - how many group members are reading this
+ * similar_length    (1x) - page count within 30% of user's average
+ * ratings_count     (1x) - log-scaled review count
+ * global_popularity (1x) - how many total users are reading this
  */
 export async function getRecommendations(
   supabase: SupabaseClient,
   userId: string
 ): Promise<ScoredBook[]> {
-  // 1. Get user's books (for genre, author matching + exclusion)
+  // 1. Get user's books with timing info
   const { data: userBooks } = await supabase
     .from("user_books")
-    .select("book_id, book:books(genre, page_count, author)")
-    .eq("user_id", userId);
+    .select(
+      "book_id, started_at, book:books(google_books_id, genre, page_count, author, title)"
+    )
+    .eq("user_id", userId)
+    .order("started_at", { ascending: false });
 
   const readBookIds = new Set(userBooks?.map((ub) => ub.book_id) ?? []);
+  const readTitles: string[] = [];
 
-  // User's genres, authors, and average page count
-  const userGenres = new Set<string>();
+  // Build recency-weighted genre and author maps
+  // Key = genre/author, Value = highest recency weight seen
+  const genreWeights = new Map<string, number>();
+  const authorWeights = new Map<string, number>();
   const userAuthors = new Set<string>();
   let totalPages = 0;
   let pageCountBooks = 0;
 
+  // Track recently read google_books_ids for related volume lookups
+  const recentGoogleIds: { id: string; categories?: string[] }[] = [];
+
   for (const ub of userBooks ?? []) {
     const book = ub.book as unknown as {
+      google_books_id: string;
       genre: string | null;
       page_count: number | null;
       author: string | null;
+      title: string;
     } | null;
-    if (book?.genre) userGenres.add(book.genre);
-    if (book?.author) {
-      // Split comma-separated authors and add each
+    if (!book) continue;
+
+    readTitles.push(book.title);
+    const weight = recencyWeight(ub.started_at);
+
+    if (book.genre) {
+      const existing = genreWeights.get(book.genre) ?? 0;
+      genreWeights.set(book.genre, Math.max(existing, weight));
+    }
+
+    if (book.author) {
       for (const a of book.author.split(",")) {
-        userAuthors.add(a.trim().toLowerCase());
+        const name = a.trim().toLowerCase();
+        userAuthors.add(name);
+        const existing = authorWeights.get(name) ?? 0;
+        authorWeights.set(name, Math.max(existing, weight));
       }
     }
-    if (book?.page_count) {
+
+    if (book.page_count) {
       totalPages += book.page_count;
       pageCountBooks++;
+    }
+
+    // Only fetch related volumes for the 3 most recent books
+    if (recentGoogleIds.length < 3) {
+      recentGoogleIds.push({
+        id: book.google_books_id,
+        categories: book.genre ? [book.genre] : undefined,
+      });
     }
   }
 
   const avgPageCount = pageCountBooks > 0 ? totalPages / pageCountBooks : 300;
 
-  // 2. Get user's group member IDs
+  // 2. Get group member data
   const { data: myMemberships } = await supabase
     .from("group_members")
     .select("group_id")
@@ -82,10 +158,8 @@ export async function getRecommendations(
     ];
   }
 
-  // 3. Get books read by group members (group popularity + group authors)
+  // 3. Group popularity + group authors
   const groupBookCounts: Record<string, number> = {};
-  const groupAuthors = new Set<string>();
-
   if (groupMemberIds.length > 0) {
     const { data: groupUserBooks } = await supabase
       .from("user_books")
@@ -98,16 +172,16 @@ export async function getRecommendations(
       const book = gub.book as unknown as { author: string | null } | null;
       if (book?.author) {
         for (const a of book.author.split(",")) {
-          groupAuthors.add(a.trim().toLowerCase());
+          const name = a.trim().toLowerCase();
+          if (!authorWeights.has(name)) {
+            authorWeights.set(name, 0.3); // group authors get a baseline weight
+          }
         }
       }
     }
   }
 
-  // Combined known authors (user + group)
-  const knownAuthors = new Set([...userAuthors, ...groupAuthors]);
-
-  // 4. Get all books with global popularity counts
+  // 4. Global popularity
   const { data: allUserBooks } = await supabase
     .from("user_books")
     .select("book_id");
@@ -124,31 +198,95 @@ export async function getRecommendations(
     .select("*")
     .limit(200);
 
-  let candidateBooks = (dbBooks ?? []).filter((b) => !readBookIds.has(b.id));
+  let candidateBooks = (dbBooks ?? []).filter(
+    (b) =>
+      !readBookIds.has(b.id) &&
+      b.page_count &&
+      !readTitles.some((t) => isSimilarTitle(t, b.title))
+  );
 
-  // If not enough local candidates, fetch from Google Books based on
-  // the user's genres and authors, cache them, and add to the pool
-  if (candidateBooks.length < 10) {
-    const searchTerms: string[] = [];
-    for (const genre of userGenres) searchTerms.push(genre);
-    for (const author of userAuthors) searchTerms.push(author);
-    if (searchTerms.length === 0) searchTerms.push("popular fiction");
+  // 6. Fetch related volumes from Google Books for the user's recent reads
+  // This is the key improvement — we ask Google directly "what's similar?"
+  const relatedGoogleIds = new Set<string>();
 
-    // Search up to 3 terms to get a diverse pool
-    const fetchedBooks: typeof candidateBooks = [];
-    for (const term of searchTerms.slice(0, 3)) {
+  const existingGoogleIds = new Set(
+    (dbBooks ?? []).map((b) => b.google_books_id)
+  );
+  const fetchedBooks: typeof candidateBooks = [];
+
+  for (const recent of recentGoogleIds) {
+    try {
+      const related = await getRelatedVolumes(recent.id, recent.categories);
+      for (const v of related) {
+        if (!v.volumeInfo.title || !v.volumeInfo.pageCount) continue;
+
+        relatedGoogleIds.add(v.id);
+
+        if (existingGoogleIds.has(v.id)) continue;
+        if (fetchedBooks.some((b) => b.google_books_id === v.id)) continue;
+
+        const bookData = {
+          google_books_id: v.id,
+          title: v.volumeInfo.title,
+          author: v.volumeInfo.authors?.join(", ") ?? null,
+          cover_url: v.volumeInfo.imageLinks?.thumbnail ?? null,
+          page_count: v.volumeInfo.pageCount ?? null,
+          genre: v.volumeInfo.categories?.[0] ?? null,
+          description: v.volumeInfo.description ?? null,
+          rating: v.volumeInfo.averageRating ?? null,
+          ratings_count: v.volumeInfo.ratingsCount ?? null,
+        };
+
+        const { data: inserted } = await supabase
+          .from("books")
+          .upsert(bookData, { onConflict: "google_books_id" })
+          .select()
+          .single();
+
+        if (inserted) {
+          existingGoogleIds.add(v.id);
+          fetchedBooks.push(inserted);
+        }
+      }
+    } catch {
+      // Continue
+    }
+  }
+
+  // 7. If still not enough candidates, do genre-based searches
+  if (candidateBooks.length + fetchedBooks.length < 10) {
+    const searchQueries: string[] = [];
+
+    // Sort genres by recency weight (most recent first)
+    const sortedGenres = [...genreWeights.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([genre]) => genre);
+
+    for (const genre of sortedGenres) {
+      searchQueries.push(`subject:${genre}`);
+    }
+
+    // Author searches for recent authors only
+    const sortedAuthors = [...authorWeights.entries()]
+      .filter(([, w]) => w >= 0.7) // only recent authors
+      .sort((a, b) => b[1] - a[1])
+      .map(([author]) => author);
+
+    for (const author of sortedAuthors.slice(0, 2)) {
+      searchQueries.push(`inauthor:"${author}"`);
+    }
+
+    if (searchQueries.length === 0) {
+      searchQueries.push("subject:fiction bestseller");
+    }
+
+    for (const query of searchQueries.slice(0, 3)) {
       try {
-        const volumes = await searchGoogleBooks(term);
+        const volumes = await searchGoogleBooks(query);
         for (const v of volumes) {
-          if (!v.volumeInfo.title) continue;
-          // Skip if already in DB
-          const existsInDb = (dbBooks ?? []).some(
-            (b) => b.google_books_id === v.id
-          );
-          const existsInFetched = fetchedBooks.some(
-            (b) => b.google_books_id === v.id
-          );
-          if (existsInDb || existsInFetched) continue;
+          if (!v.volumeInfo.title || !v.volumeInfo.pageCount) continue;
+          if (existingGoogleIds.has(v.id)) continue;
+          if (fetchedBooks.some((b) => b.google_books_id === v.id)) continue;
 
           const bookData = {
             google_books_id: v.id,
@@ -162,7 +300,6 @@ export async function getRecommendations(
             ratings_count: v.volumeInfo.ratingsCount ?? null,
           };
 
-          // Cache in DB
           const { data: inserted } = await supabase
             .from("books")
             .upsert(bookData, { onConflict: "google_books_id" })
@@ -170,18 +307,22 @@ export async function getRecommendations(
             .single();
 
           if (inserted) {
+            existingGoogleIds.add(v.id);
             fetchedBooks.push(inserted);
           }
         }
       } catch {
-        // Ignore search failures, continue with what we have
+        // Continue
       }
     }
-
-    candidateBooks = [...candidateBooks, ...fetchedBooks].filter(
-      (b) => !readBookIds.has(b.id)
-    );
   }
+
+  candidateBooks = [...candidateBooks, ...fetchedBooks].filter(
+    (b) =>
+      !readBookIds.has(b.id) &&
+      b.page_count &&
+      !readTitles.some((t) => isSimilarTitle(t, b.title))
+  );
 
   if (candidateBooks.length === 0) return [];
 
@@ -192,63 +333,62 @@ export async function getRecommendations(
     1,
     ...candidateBooks.map((b) => b.ratings_count ?? 0)
   );
-  // Use log scale for ratings count so a book with 10k reviews doesn't
-  // completely dominate one with 500
   const logMaxRatings = Math.log(maxRatingsCount + 1);
 
-  // 6. Score candidates
-  const scored: ScoredBook[] = candidateBooks
-    .filter((book) => !readBookIds.has(book.id))
-    .map((book) => {
-      // Genre match (0 or 1)
-      const genreMatch =
-        book.genre && userGenres.has(book.genre) ? 1 : 0;
+  // 8. Score candidates
+  const scored: ScoredBook[] = candidateBooks.map((book) => {
+    // Genre match — weighted by how recently user read that genre
+    const genreScore = book.genre ? (genreWeights.get(book.genre) ?? 0) : 0;
 
-      // Author match (0 or 1) — matches if any of the book's authors
-      // appear in the user's or group's reading history
-      let authorMatch = 0;
-      if (book.author) {
-        const bookAuthors = book.author
-          .split(",")
-          .map((a: string) => a.trim().toLowerCase());
-        if (bookAuthors.some((a: string) => knownAuthors.has(a))) {
-          authorMatch = 1;
-        }
+    // Author match — weighted by recency
+    let authorScore = 0;
+    if (book.author) {
+      const bookAuthors = book.author
+        .split(",")
+        .map((a: string) => a.trim().toLowerCase());
+      for (const a of bookAuthors) {
+        const w = authorWeights.get(a) ?? 0;
+        authorScore = Math.max(authorScore, w);
       }
+    }
 
-      // Similar length (0 or 1)
-      const similarLength =
-        book.page_count &&
-        Math.abs(book.page_count - avgPageCount) / avgPageCount <= 0.2
-          ? 1
-          : 0;
+    // Related volume bonus — Google says it's related to a recent read
+    const isRelated = relatedGoogleIds.has(book.google_books_id) ? 1 : 0;
 
-      // Group popularity (0-1, normalized)
-      const groupPop = (groupBookCounts[book.id] ?? 0) / maxGroupPop;
+    // Similar length (0 or 1)
+    const similarLength =
+      book.page_count &&
+      Math.abs(book.page_count - avgPageCount) / avgPageCount <= 0.3
+        ? 1
+        : 0;
 
-      // Global popularity (0-1, normalized)
-      const globalPop = (globalBookCounts[book.id] ?? 0) / maxGlobalPop;
+    // Group popularity (0-1)
+    const groupPop = (groupBookCounts[book.id] ?? 0) / maxGroupPop;
 
-      // Rating (0-1, rating/5)
-      const ratingScore = book.rating != null ? book.rating / 5 : 0;
+    // Global popularity (0-1)
+    const globalPop = (globalBookCounts[book.id] ?? 0) / maxGlobalPop;
 
-      // Ratings count (0-1, log-normalized)
-      const ratingsCountScore =
-        book.ratings_count != null && book.ratings_count > 0
-          ? Math.log(book.ratings_count + 1) / logMaxRatings
-          : 0;
+    // Rating (0-1)
+    const ratingScore = book.rating != null ? book.rating / 5 : 0;
 
-      const score =
-        3 * genreMatch +
-        4 * authorMatch +
-        1 * similarLength +
-        3 * groupPop +
-        1 * globalPop +
-        2 * ratingScore +
-        1 * ratingsCountScore;
+    // Ratings count (0-1, log-normalized)
+    const ratingsCountScore =
+      book.ratings_count != null && book.ratings_count > 0
+        ? Math.log(book.ratings_count + 1) / logMaxRatings
+        : 0;
 
-      return { ...book, score };
-    });
+    const score =
+      5 * genreScore +
+      3 * isRelated +
+      2 * authorScore +
+      2 * ratingScore +
+      2 * groupPop +
+      1 * similarLength +
+      1 * ratingsCountScore +
+      1 * globalPop;
+
+    return { ...book, score };
+  });
 
   scored.sort((a, b) => b.score - a.score);
 

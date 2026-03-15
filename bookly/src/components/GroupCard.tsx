@@ -7,7 +7,7 @@ export default function GroupCard({ group }: { group: Group }) {
   return (
     <Link
       href={`/groups/${group.id}`}
-      className="block bg-white rounded-xl border border-gray-200 p-5 hover:border-indigo-300 hover:shadow-sm transition-all"
+      className="block bg-white rounded-xl shadow-sm p-5 hover:shadow-md hover:scale-[1.02] transition-all duration-200"
     >
       <h3 className="font-semibold text-gray-900">{group.name}</h3>
       {group.description && (
@@ -16,7 +16,7 @@ export default function GroupCard({ group }: { group: Group }) {
         </p>
       )}
       <div className="mt-3 flex items-center gap-2">
-        <span className="text-xs bg-indigo-50 text-indigo-600 px-2 py-1 rounded-full font-medium">
+        <span className="text-xs bg-indigo-50 text-indigo-600 px-2.5 py-1 rounded-full font-medium shadow-sm">
           Code: {group.invite_code}
         </span>
       </div>

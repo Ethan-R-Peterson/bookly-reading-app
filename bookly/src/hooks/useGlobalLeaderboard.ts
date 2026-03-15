@@ -3,13 +3,11 @@
 import { useQuery } from "@tanstack/react-query";
 import type { LeaderboardEntry } from "@/types";
 
-export function useLeaderboard(groupId: string, period: string = "all") {
+export function useGlobalLeaderboard(period: string = "all") {
   return useQuery<LeaderboardEntry[]>({
-    queryKey: ["leaderboard", groupId, period],
+    queryKey: ["globalLeaderboard", period],
     queryFn: async () => {
-      const res = await fetch(
-        `/api/groups/${groupId}/leaderboard?period=${period}`
-      );
+      const res = await fetch(`/api/leaderboard?period=${period}`);
       if (!res.ok) throw new Error("Failed to fetch leaderboard");
       return res.json();
     },

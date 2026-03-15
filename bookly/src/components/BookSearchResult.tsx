@@ -78,15 +78,15 @@ export default function BookSearchResult({ book }: { book: BookResult }) {
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 flex gap-4">
+    <div className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 p-4 flex gap-4">
       {book.cover_url ? (
         <img
           src={book.cover_url}
           alt={book.title}
-          className="w-20 h-28 object-cover rounded shrink-0"
+          className="w-20 h-28 object-cover rounded-lg shadow-md shrink-0 hover:scale-105 transition-transform duration-200"
         />
       ) : (
-        <div className="w-20 h-28 bg-gray-100 rounded flex items-center justify-center text-gray-400 text-xs shrink-0">
+        <div className="w-20 h-28 bg-gray-100 rounded-lg shadow-md flex items-center justify-center text-gray-400 text-xs shrink-0">
           No cover
         </div>
       )}
@@ -119,7 +119,7 @@ export default function BookSearchResult({ book }: { book: BookResult }) {
             <button
               onClick={handleStart}
               disabled={startReading.isPending}
-              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+              className="px-3 py-1.5 text-sm bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 hover:shadow-md disabled:opacity-50 transition-all duration-200"
             >
               {startReading.isPending ? "Adding..." : "Start Reading"}
             </button>

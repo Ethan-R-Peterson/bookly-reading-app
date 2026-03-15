@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import Navbar from "@/components/Navbar";
+import { getRankInfo } from "@/lib/gamification";
 
 export default async function DashboardPage() {
   const supabase = await createClient();
@@ -36,6 +37,8 @@ export default async function DashboardPage() {
   const totalPoints =
     pointsData?.reduce((sum, p) => sum + p.amount, 0) ?? 0;
 
+  const rankInfo = getRankInfo(totalPoints);
+
   const readingBooks = userBooks?.filter((ub) => ub.status === "reading") ?? [];
   const finishedBooks = userBooks?.filter((ub) => ub.status === "finished") ?? [];
 
@@ -46,21 +49,28 @@ export default async function DashboardPage() {
     <>
       <Navbar />
       <main className="max-w-5xl mx-auto px-4 py-8">
-        <div className="mb-8">
-          <h1 className="text-2xl font-bold text-gray-900">
+        <div className="mb-10 bg-gradient-to-r from-indigo-600 to-purple-600 rounded-2xl p-6 text-white shadow-lg">
+          <h1 className="text-2xl font-bold tracking-tight">
             Welcome back, {profile?.username ?? "Reader"}
           </h1>
-          <p className="text-gray-500 mt-1">Keep reading and earning points!</p>
+          <p className="text-indigo-100 mt-1">
+            <span className="font-medium text-white">{rankInfo.title}</span>
+            {rankInfo.nextTitle && (
+              <span className="text-indigo-200">
+                {" "}{"\u00B7"} {rankInfo.pointsToNext} pts to {rankInfo.nextTitle}
+              </span>
+            )}
+          </p>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-8">
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-sm text-gray-500">Total Points</p>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-10">
+          <div className="bg-indigo-50/50 rounded-xl border-l-4 border-l-indigo-500 shadow-sm p-5">
+            <p className="text-sm text-gray-500">{"\u{2B50}"} Total Points</p>
             <p className="text-3xl font-bold text-indigo-600">{totalPoints}</p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-sm text-gray-500">Current Streak</p>
+          <div className="bg-orange-50/50 rounded-xl border-l-4 border-l-orange-500 shadow-sm p-5">
+            <p className="text-sm text-gray-500">{"\u{1F525}"} Current Streak</p>
             <p className="text-3xl font-bold text-orange-500">
               {profile?.current_streak ?? 0}
               <span className="text-lg font-normal text-gray-400"> days</span>
@@ -71,14 +81,14 @@ export default async function DashboardPage() {
               </p>
             )}
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-sm text-gray-500">Pages Read</p>
+          <div className="bg-emerald-50/50 rounded-xl border-l-4 border-l-emerald-500 shadow-sm p-5">
+            <p className="text-sm text-gray-500">{"\u{1F4D6}"} Pages Read</p>
             <p className="text-3xl font-bold text-emerald-600">
               {totalPagesRead}
             </p>
           </div>
-          <div className="bg-white rounded-xl border border-gray-200 p-5">
-            <p className="text-sm text-gray-500">Books Finished</p>
+          <div className="bg-purple-50/50 rounded-xl border-l-4 border-l-purple-500 shadow-sm p-5">
+            <p className="text-sm text-gray-500">{"\u{1F3C6}"} Books Finished</p>
             <p className="text-3xl font-bold text-purple-600">
               {finishedBooks.length}
             </p>
@@ -86,22 +96,22 @@ export default async function DashboardPage() {
         </div>
 
         {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3 mb-8">
+        <div className="flex flex-wrap gap-3 mb-10">
           <Link
             href="/log"
-            className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
+            className="px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg shadow-sm hover:bg-indigo-700 hover:shadow-md transition-all duration-200"
           >
             Log Pages
           </Link>
           <Link
             href="/books"
-            className="px-4 py-2 text-sm border border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors"
+            className="px-4 py-2 text-sm border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all duration-200"
           >
             Find Books
           </Link>
           <Link
             href="/recommendations"
-            className="px-4 py-2 text-sm border border-indigo-600 text-indigo-600 rounded-lg hover:bg-indigo-50 transition-colors"
+            className="px-4 py-2 text-sm border border-indigo-200 text-indigo-600 rounded-lg hover:bg-indigo-50 hover:border-indigo-300 transition-all duration-200"
           >
             Recommendations
           </Link>
@@ -111,7 +121,7 @@ export default async function DashboardPage() {
           {/* Currently Reading */}
           <div className="lg:col-span-2">
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">
+              <h2 className="text-lg font-semibold text-gray-900 tracking-tight">
                 Currently Reading ({readingBooks.length})
               </h2>
               <Link
@@ -126,16 +136,16 @@ export default async function DashboardPage() {
                 {readingBooks.slice(0, 4).map((ub) => (
                   <div
                     key={ub.id}
-                    className="bg-white rounded-xl border border-gray-200 p-4 flex gap-4"
+                    className="bg-white rounded-xl shadow-sm hover:shadow-md transition-all duration-200 p-4 flex gap-4"
                   >
                     {ub.book?.cover_url ? (
                       <img
                         src={ub.book.cover_url}
                         alt={ub.book.title}
-                        className="w-14 h-20 object-cover rounded shrink-0"
+                        className="w-14 h-20 object-cover rounded-lg shadow-md shrink-0 hover:scale-105 transition-transform duration-200"
                       />
                     ) : (
-                      <div className="w-14 h-20 bg-gray-100 rounded flex items-center justify-center text-gray-400 text-xs shrink-0">
+                      <div className="w-14 h-20 bg-gray-100 rounded-lg shadow-md flex items-center justify-center text-gray-400 text-xs shrink-0">
                         No cover
                       </div>
                     )}
@@ -163,7 +173,7 @@ export default async function DashboardPage() {
                         </div>
                         <div className="w-full bg-gray-100 rounded-full h-2">
                           <div
-                            className="bg-indigo-500 h-2 rounded-full transition-all"
+                            className="bg-gradient-to-r from-indigo-500 to-purple-500 h-2 rounded-full transition-all"
                             style={{
                               width: `${ub.book?.page_count ? Math.min(100, (ub.current_page / ub.book.page_count) * 100) : 0}%`,
                             }}
@@ -175,12 +185,13 @@ export default async function DashboardPage() {
                 ))}
               </div>
             ) : (
-              <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-8 text-center">
+              <div className="bg-gray-50/50 rounded-xl border border-dashed border-gray-200 p-10 text-center">
+                <p className="text-4xl mb-3">{"\u{1F4DA}"}</p>
                 <p className="text-gray-500">
                   No books yet.{" "}
                   <Link
                     href="/books"
-                    className="text-indigo-600 hover:underline"
+                    className="text-indigo-600 hover:underline font-medium"
                   >
                     Search for a book to start reading!
                   </Link>
@@ -192,7 +203,7 @@ export default async function DashboardPage() {
           {/* My Groups sidebar */}
           <div>
             <div className="flex items-center justify-between mb-4">
-              <h2 className="text-lg font-semibold text-gray-900">My Groups</h2>
+              <h2 className="text-lg font-semibold text-gray-900 tracking-tight">My Groups</h2>
               <Link
                 href="/groups"
                 className="text-sm text-indigo-600 hover:text-indigo-700"
@@ -211,7 +222,7 @@ export default async function DashboardPage() {
                     <Link
                       key={gm.group_id}
                       href={`/groups/${g.id}`}
-                      className="block bg-white rounded-xl border border-gray-200 p-4 hover:border-indigo-300 transition-colors"
+                      className="block bg-white rounded-xl shadow-sm p-4 hover:shadow-md hover:scale-[1.02] transition-all duration-200"
                     >
                       <p className="font-medium text-sm text-gray-900">
                         {g.name}
@@ -221,12 +232,13 @@ export default async function DashboardPage() {
                 })}
               </div>
             ) : (
-              <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-6 text-center">
+              <div className="bg-gray-50/50 rounded-xl border border-dashed border-gray-200 p-8 text-center">
+                <p className="text-3xl mb-2">{"\u{1F465}"}</p>
                 <p className="text-sm text-gray-500">
                   No groups yet.{" "}
                   <Link
                     href="/groups"
-                    className="text-indigo-600 hover:underline"
+                    className="text-indigo-600 hover:underline font-medium"
                   >
                     Create or join one!
                   </Link>

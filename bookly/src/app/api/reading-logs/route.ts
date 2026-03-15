@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { awardPagePoints, awardFinishBonus, updateStreak } from "@/lib/points";
+import { checkAndAwardBadges } from "@/lib/gamification";
 
 // POST /api/reading-logs - log pages read
 export async function POST(request: Request) {
@@ -178,6 +179,20 @@ export async function POST(request: Request) {
     }
 
     await supabase.from("feed_events").insert(feedEvents);
+
+    // Check for new badges and create feed events for them
+    const newBadges = await checkAndAwardBadges(supabase, user.id);
+    if (newBadges.length > 0) {
+      const badgeFeedEvents = newBadges.flatMap((badge) =>
+        memberships.map((m) => ({
+          user_id: user.id,
+          group_id: m.group_id,
+          event_type: "earned_badge" as const,
+          metadata: { badgeName: badge.name },
+        }))
+      );
+      await supabase.from("feed_events").insert(badgeFeedEvents);
+    }
   }
 
   return NextResponse.json({

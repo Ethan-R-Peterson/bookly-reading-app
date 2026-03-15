@@ -12,7 +12,7 @@ export default function RecommendationsPage() {
     <>
       <Navbar />
       <main className="max-w-5xl mx-auto px-4 py-8">
-        <h1 className="text-2xl font-bold text-gray-900 mb-2">
+        <h1 className="text-2xl font-bold text-gray-900 tracking-tight mb-2">
           Recommended For You
         </h1>
         <p className="text-gray-500 mb-6">
@@ -43,7 +43,8 @@ export default function RecommendationsPage() {
           </div>
         ) : (
           !isLoading && (
-            <div className="bg-gray-50 rounded-xl border border-dashed border-gray-300 p-8 text-center">
+            <div className="bg-gray-50/50 rounded-xl border border-dashed border-gray-200 p-10 text-center">
+              <p className="text-4xl mb-3">{"\u{2728}"}</p>
               <p className="text-gray-500">
                 No recommendations yet. Start reading some books and join a
                 group to get personalized suggestions!
